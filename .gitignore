@@ -1,0 +1,4 @@
+.data/
+.vector_cache/
+pl_logs/
+__pycache__/
