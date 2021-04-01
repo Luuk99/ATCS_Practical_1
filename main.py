@@ -2,13 +2,16 @@
 import argparse
 import os
 
+# DEBUG
+#os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from torch.optim.lr_scheduler import MultiplicativeLR
-from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.optim.lr_scheduler import StepLR
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 # own imports
 from dataset.LoadData import *
@@ -43,22 +46,37 @@ class FullModel(pl.LightningModule):
         # create the classifier
         self.classifier = Classifier()
 
+        # create the loss function
+        self.loss_function = nn.CrossEntropyLoss()
+
+        # create instance to save the last validation accuracy
+        self.last_val_acc = None
+
     def forward(self, sentences):
         """
         The forward function calculates the loss for a given batch of sentences.
         Inputs:
             sentences - Batch of sentences with (premise, hypothesis, label) pairs
         Ouptuts:
-            ?
+            loss - Cross entropy loss of the predictions
+            accuracy - Accuracy of the predictions
         """
 
         # forward the sentences through the Encoder
-        premise_embeddings, hypothesis_embeddings = self.encoder(sentences.premise, sentences.hypothesis)
+        sentence_representations = self.encoder(sentences.premise, sentences.hypothesis)
 
-        # TODO: calculate loss and accuracy
+        # pass through the classifier
+        predictions = self.classifier(sentence_representations)
+        #print(predictions.shape)
+        #print(sentences.label)
+
+        # calculate the loss and accuracy
+        loss = self.loss_function(predictions, sentences.label)
+        predicted_labels = torch.argmax(predictions, dim=1)
+        accuracy = torch.true_divide(torch.sum(predicted_labels == sentences.label), torch.tensor(sentences.label.shape[0], device=sentences.label.device))
 
         # return the loss and accuracy
-        return None, None
+        return loss, accuracy
 
     # function that configures the optimizer for the model
     def configure_optimizers(self):
@@ -66,11 +84,13 @@ class FullModel(pl.LightningModule):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.hparams.lr)
 
         # create learning rate decay
-        lmbda = lambda epoch: self.hparams.lr_decay
-        scheduler = MultiplicativeLR(optimizer, lr_lambda=lmbda)
+        lr_scheduler = {
+            'scheduler': StepLR(optimizer=optimizer, step_size=1, gamma=self.hparams.lr_decay),
+            'name': 'learning_rate'
+        }
 
         # return the scheduler and optimizer
-        return [optimizer], [scheduler]
+        return [optimizer], [lr_scheduler]
 
     # function that performs a training step
     def training_step(self, batch, batch_idx):
@@ -81,17 +101,20 @@ class FullModel(pl.LightningModule):
         self.log("train_loss", train_loss, on_step=False, on_epoch=True)
         self.log("train_acc", train_acc, on_step=False, on_epoch=True)
 
-        # return the training accuracy
-        return train_acc
+        # return the training loss
+        return train_loss
 
     # function that performs a validation step
     def validation_step(self, batch, batch_idx):
         # forward the batch through the model
-        dev_loss, dev_acc = self.forward(batch)
+        val_loss, val_acc = self.forward(batch)
 
-        # log the development/validation loss and accuracy
-        self.log("dev_loss", dev_loss)
-        self.log("dev_acc", dev_acc)
+        # log the validation loss and accuracy
+        self.log("val_loss", val_loss)
+        self.log("val_acc", val_acc)
+
+        # save the validation accuracy
+        self.last_val_acc = val_acc
 
     # function that performs a test step
     def test_step(self, batch, batch_idx):
@@ -101,6 +124,54 @@ class FullModel(pl.LightningModule):
         # log the test loss and accuracy
         self.log("test_loss", test_loss)
         self.log("test_acc", test_acc)
+
+
+# Pytorch Lightning callback class
+class PLCallback(pl.Callback):
+
+    def __init__(self, lr_decrease_factor=5):
+        """
+        Inputs:
+            lr_decrease_factor - Factor to divide the learning rate by when
+                the validation accuracy decreases. Default is 5
+        """
+        super().__init__()
+
+        # save the decrease factor
+        self.decrease_factor = lr_decrease_factor
+
+        # initialize the previous validation accuracy as 0
+        self.last_val_acc = 0
+
+    def on_train_epoch_end(self, trainer, pl_module, outputs):
+        """
+        This function is called after every training epoch
+        """
+
+        # check if the learning rate has fallen under 10e-5
+        print(trainer.optimizers[0].state_dict())
+        current_lr = trainer.optimizers[0].state_dict()['param_groups'][0]['lr']
+        if (current_lr < 10e-5):
+            # stop training
+            trainer.should_stop = True
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        """
+        This function is called after every validation epoch
+        """
+
+        # check of the validation accuracy has decreased
+        if pl_module.last_val_acc < self.last_val_acc:
+            # divide the learning rate by the specified factor
+            state_dict = trainer.optimizers[0].state_dict()
+            state_dict['param_groups'][0]['lr'] = state_dict['param_groups'][0]['lr'] / self.decrease_factor
+            new_optimizer = torch.optim.SGD(pl_module.parameters(), lr=state_dict['param_groups'][0]['lr'])
+            new_optimizer.load_state_dict(state_dict)
+            trainer.optimizers[0] = new_optimizer
+            # TODO: update scheduler
+
+        # save the validation accuracy
+        self.last_val_acc = pl_module.last_val_acc
 
 
 # function to train the specified model
@@ -117,10 +188,18 @@ def train_model(args):
     # create the datasets
     train_iter, dev_iter, test_iter = load_snli(None, args.batch_size)
 
+    # create the callback for decreasing the learning rate
+    pl_callback = PLCallback(lr_decrease_factor=args.lr_decrease_factor)
+
+    # create a learning rate monitor callback
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+
     # create a PyTorch Lightning trainer
     trainer = pl.Trainer(default_root_dir=args.log_dir,
-                         checkpoint_callback=ModelCheckpoint(save_weights_only=True, mode="max", monitor="dev_acc"),
+                         checkpoint_callback=ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_acc"),
                          gpus=1 if torch.cuda.is_available() else 0,
+                         callbacks=[lr_monitor, pl_callback],
+                         max_epochs=10,
                          progress_bar_refresh_rate=1 if args.progress_bar else 0)
     trainer.logger._default_hp_metric = None
 
@@ -132,12 +211,12 @@ def train_model(args):
     trainer.fit(model, train_iter, dev_iter)
 
     # test the model
-    #model = FullModel.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
-    #model.freeze()
-    #test_result = trainer.test(model, test_dataloaders=test_iter, verbose=True)
+    model = FullModel.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    model.freeze()
+    test_result = trainer.test(model, test_dataloaders=test_iter, verbose=True)
 
     # return the test results
-    #return test_result
+    return test_result
 
 
 # command line arguments parsing
@@ -145,12 +224,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    # Model hyperparameters
+    # model hyperparameters
     parser.add_argument('--model', default='AWE', type=str,
                         help='What model to use. Default is AWE',
                         choices=['AWE', 'UniLSTM', 'BiLSTM', 'BiLSTMMax'])
 
-    # Optimizer hyperparameters
+    # optimizer hyperparameters
     parser.add_argument('--lr', default=0.1, type=float,
                         help='Learning rate to use. Default is 0.1')
     parser.add_argument('--batch_size', default=64, type=int,
@@ -162,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr_threshold', default=1e-5, type=float,
                         help='Learning rate threshold to stop at. Default is 1e-5')
 
-    # Other hyperparameters
+    # other hyperparameters
     parser.add_argument('--seed', default=42, type=int,
                         help='Seed to use for reproducing results')
     parser.add_argument('--log_dir', default='pl_logs', type=str,
