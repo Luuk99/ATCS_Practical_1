@@ -17,6 +17,7 @@ def load_snli(device, batch_size=64):
     # create the vocab
     text_field.build_vocab(train_dataset, vectors=glove_embeddings)
     label_field.build_vocab(train_dataset)
+    vocab = text_field.vocab
 
     # create batch iterators for the datasets
     train_iter, dev_iter, test_iter = BucketIterator.splits(
@@ -24,8 +25,8 @@ def load_snli(device, batch_size=64):
         batch_sizes=(batch_size, batch_size, batch_size),
         device=device)
 
-    # return the datasets
-    return train_iter, dev_iter, test_iter
+    # return the vocab and datasets
+    return vocab, train_iter, dev_iter, test_iter
 
 
 # function that loads the GLOVE embeddings

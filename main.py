@@ -17,34 +17,41 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from dataset.LoadData import *
 from utils import *
 from models.Awe import AWEEncoder
+from models.UniLSTM import UniLSTM
 from models.Classifier import Classifier
 
 # full model class
 class FullModel(pl.LightningModule):
 
-    def __init__(self, model_name, lr, lr_decay):
+    def __init__(self, model_name, vocab, lr, lr_decay, batch_size=64):
         """
         PyTorch Lightning module that creates the overall model.
         Inputs:
             model_name - String denoting what encoder class to use.  Either 'AWE', 'UniLSTM', 'BiLSTM', or 'BiLSTMMax'
+            vocab - Vocabulary from alignment between SNLI dataset and GloVe vectors
             lr - Learning rate to use for the optimizer
             lr_decay - Learning rate decay factor to use each epoch
+            batch_size - Size of the batches. Default is 64
         """
         super().__init__()
         self.save_hyperparameters()
 
+        # create an embedding layer for the vocabulary embeddings
+        self.glove_embeddings = nn.Embedding.from_pretrained(vocab.vectors)
+
         # check which encoder model to use
         if model_name == 'AWE':
             self.encoder = AWEEncoder()
+            self.classifier = Classifier()
         elif model_name == 'UniLSTM':
-            self.encoder = None
+            self.encoder = UniLSTM(batch_size=batch_size)
+            self.classifier = Classifier(input_dim=4*2048)
         elif model_name == 'BiLSTM':
             self.encoder = None
+            # model hidden dimension is 4096
         else:
             self.encoder = None
-
-        # create the classifier
-        self.classifier = Classifier()
+            # model hidden dimension is 4096
 
         # create the loss function
         self.loss_function = nn.CrossEntropyLoss()
@@ -62,18 +69,32 @@ class FullModel(pl.LightningModule):
             accuracy - Accuracy of the predictions
         """
 
-        # forward the sentences through the Encoder
-        sentence_representations = self.encoder(sentences.premise, sentences.hypothesis)
+        # get the sentence lengths of the batch
+        lengths_premises = torch.tensor([x[x!=1].shape[0] for x in sentences.premise], device=self.device)
+        lengths_hypothesis = torch.tensor([x[x!=1].shape[0] for x in sentences.hypothesis], device=self.device)
+
+        # DEBUG
+        #print('Sentence lengths:')
+        #print(lengths_premises)
+        #print(lengths_hypothesis)
+
+        # pass premises and hypothesis through the embeddings
+        premises = self.glove_embeddings(sentences.premise)
+        hypothesis = self.glove_embeddings(sentences.hypothesis)
+
+        # forward the premises and hypothesis through the Encoder
+        sentence_representations = self.encoder(premises, lengths_premises, hypothesis, lengths_hypothesis)
 
         # pass through the classifier
         predictions = self.classifier(sentence_representations)
-        #print(predictions.shape)
-        #print(sentences.label)
+
+        # subtract 1 from the labels
+        labels = sentences.label - 1
 
         # calculate the loss and accuracy
-        loss = self.loss_function(predictions, sentences.label)
+        loss = self.loss_function(predictions, labels)
         predicted_labels = torch.argmax(predictions, dim=1)
-        accuracy = torch.true_divide(torch.sum(predicted_labels == sentences.label), torch.tensor(sentences.label.shape[0], device=sentences.label.device))
+        accuracy = torch.true_divide(torch.sum(predicted_labels == labels), torch.tensor(labels.shape[0], device=labels.device))
 
         # return the loss and accuracy
         return loss, accuracy
@@ -149,7 +170,6 @@ class PLCallback(pl.Callback):
         """
 
         # check if the learning rate has fallen under 10e-5
-        print(trainer.optimizers[0].state_dict())
         current_lr = trainer.optimizers[0].state_dict()['param_groups'][0]['lr']
         if (current_lr < 10e-5):
             # stop training
@@ -167,8 +187,19 @@ class PLCallback(pl.Callback):
             state_dict['param_groups'][0]['lr'] = state_dict['param_groups'][0]['lr'] / self.decrease_factor
             new_optimizer = torch.optim.SGD(pl_module.parameters(), lr=state_dict['param_groups'][0]['lr'])
             new_optimizer.load_state_dict(state_dict)
-            trainer.optimizers[0] = new_optimizer
-            # TODO: update scheduler
+
+            # update scheduler
+            scheduler_state_dict = trainer.lr_schedulers[0]['scheduler'].state_dict()
+            new_step_scheduler = StepLR(optimizer=new_optimizer, step_size=1, gamma=scheduler_state_dict['gamma'])
+            new_step_scheduler.load_state_dict(scheduler_state_dict)
+            new_scheduler = {
+                'scheduler': new_step_scheduler,
+                'name': 'learning_rate'
+            }
+
+            # use the new scheduler and optimizer
+            trainer.optimizers = [new_optimizer]
+            trainer.lr_schedulers = trainer.configure_schedulers([new_scheduler])
 
         # save the validation accuracy
         self.last_val_acc = pl_module.last_val_acc
@@ -185,8 +216,8 @@ def train_model(args):
     # create the logging directory
     os.makedirs(args.log_dir, exist_ok=True)
 
-    # create the datasets
-    train_iter, dev_iter, test_iter = load_snli(None, args.batch_size)
+    # create the vocabulary and datasets
+    vocab, train_iter, dev_iter, test_iter = load_snli(None, args.batch_size)
 
     # create the callback for decreasing the learning rate
     pl_callback = PLCallback(lr_decrease_factor=args.lr_decrease_factor)
@@ -205,7 +236,8 @@ def train_model(args):
 
     # create model
     pl.seed_everything(args.seed)
-    model = FullModel(model_name=args.model, lr=args.lr, lr_decay=args.lr_decay)
+    model = FullModel(model_name=args.model, vocab=vocab, lr=args.lr,
+                      lr_decay=args.lr_decay, batch_size=args.batch_size)
 
     # train the model
     trainer.fit(model, train_iter, dev_iter)

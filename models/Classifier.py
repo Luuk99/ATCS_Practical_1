@@ -5,14 +5,16 @@ import torch.nn as nn
 
 # classifier class for the sentence representations to predictions
 class Classifier(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim=4*300):
         """Classifier used for the predictions
+        Inputs:
+            input_dim - Dimension of the input. Default is 4*300 (AWE embedding)
         """
         super().__init__()
 
         # initialize the classifier
         self.net = nn.Sequential(
-            nn.Linear(4*300, 512),
+            nn.Linear(input_dim, 512),
             nn.Linear(512, 512),
             nn.Linear(512, 3)
         )
@@ -27,10 +29,6 @@ class Classifier(nn.Module):
 
         # pass sentence embeddings through model
         predictions = self.net(sentence_embeddings)
-
-        # DEBUG
-        # append 0's before the predictions because labels range from 1-3
-        predictions = torch.cat([torch.zeros((sentence_embeddings.shape[0], 1), device=predictions.device), predictions], dim=-1)
 
         # return the  predictions
         return predictions
