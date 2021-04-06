@@ -4,21 +4,16 @@ import torch.nn as nn
 import numpy as np
 
 
-# Unidirectional LSTM encoder class for creating the sentence representations
-class UniLSTM(nn.Module):
-    def __init__(self, batch_size=64):
-        """Unidirectional LSTM Encoder
-        Inputs:
-            batch_size - Size of the batches. Default is 64
+# Bidirectional LSTM encoder class for creating the sentence representations
+class BiLSTM(nn.Module):
+    def __init__(self):
+        """Bidirectional LSTM Encoder
         """
         super().__init__()
 
-        # save the batch size
-        self.batch_size = batch_size
-
         # create the LSTM
-        self.lstm = nn.LSTM(input_size=300, hidden_size=2048, num_layers=1,
-                            batch_first=True, bidirectional=False)
+        self.lstm = nn.LSTM(input_size=300, hidden_size=4096, num_layers=1,
+                            batch_first=True, bidirectional=True)
 
     def forward(self, premises, lengths_premises, hypothesis, lengths_hypothesis):
         """
@@ -32,8 +27,8 @@ class UniLSTM(nn.Module):
         """
 
         # initialize the hidden state and cell state
-        self.hidden_state = torch.zeros((1, premises.shape[0], 2048), dtype=torch.float, device=self.device)
-        self.cell_state = torch.zeros((1, premises.shape[0], 2048), dtype=torch.float, device=self.device)
+        self.hidden_state = torch.zeros((2, premises.shape[0], 4096), dtype=torch.float, device=self.device)
+        self.cell_state = torch.zeros((2, premises.shape[0], 4096), dtype=torch.float, device=self.device)
 
         # sort the embeddings on sentence length
         sorted_lengths_premises, sorted_indices_premises = torch.sort(lengths_premises, dim=0, descending=True)
@@ -46,10 +41,12 @@ class UniLSTM(nn.Module):
         packed_hypothesis = nn.utils.rnn.pack_padded_sequence(sorted_hypothesis, sorted_lengths_hypothesis, batch_first=True)
 
         # run through the model
-        _, premises_hidden_states = self.lstm(packed_premises, (self.hidden_state, self.cell_state))
-        _, hypothesis_hidden_states = self.lstm(packed_hypothesis, (self.hidden_state, self.cell_state))
-        premises_hidden_states = premises_hidden_states[0].squeeze(dim=0)
-        hypothesis_hidden_states = hypothesis_hidden_states[0].squeeze(dim=0)
+        _, (premises_hidden_states, _) = self.lstm(packed_premises, (self.hidden_state, self.cell_state))
+        _, (hypothesis_hidden_states, _) = self.lstm(packed_hypothesis, (self.hidden_state, self.cell_state))
+
+        # concat the hidden states of the directions
+        premises_hidden_states = torch.cat([premises_hidden_states[0].squeeze(dim=0), premises_hidden_states[1].squeeze(dim=0)], dim=1)
+        hypothesis_hidden_states = torch.cat([hypothesis_hidden_states[0].squeeze(dim=0), hypothesis_hidden_states[1].squeeze(dim=0)], dim=1)
 
         # unsort the embeddings
         unsorted_indices_premises = torch.argsort(sorted_indices_premises)

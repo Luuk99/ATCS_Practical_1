@@ -6,15 +6,10 @@ import numpy as np
 
 # Unidirectional LSTM encoder class for creating the sentence representations
 class UniLSTM(nn.Module):
-    def __init__(self, batch_size=64):
+    def __init__(self):
         """Unidirectional LSTM Encoder
-        Inputs:
-            batch_size - Size of the batches. Default is 64
         """
         super().__init__()
-
-        # save the batch size
-        self.batch_size = batch_size
 
         # create the LSTM
         self.lstm = nn.LSTM(input_size=300, hidden_size=2048, num_layers=1,
@@ -46,10 +41,10 @@ class UniLSTM(nn.Module):
         packed_hypothesis = nn.utils.rnn.pack_padded_sequence(sorted_hypothesis, sorted_lengths_hypothesis, batch_first=True)
 
         # run through the model
-        _, premises_hidden_states = self.lstm(packed_premises, (self.hidden_state, self.cell_state))
-        _, hypothesis_hidden_states = self.lstm(packed_hypothesis, (self.hidden_state, self.cell_state))
-        premises_hidden_states = premises_hidden_states[0].squeeze(dim=0)
-        hypothesis_hidden_states = hypothesis_hidden_states[0].squeeze(dim=0)
+        _, (premises_hidden_states, _) = self.lstm(packed_premises, (self.hidden_state, self.cell_state))
+        _, (hypothesis_hidden_states, _) = self.lstm(packed_hypothesis, (self.hidden_state, self.cell_state))
+        premises_hidden_states = premises_hidden_states.squeeze(dim=0)
+        hypothesis_hidden_states = hypothesis_hidden_states.squeeze(dim=0)
 
         # unsort the embeddings
         unsorted_indices_premises = torch.argsort(sorted_indices_premises)

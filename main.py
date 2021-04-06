@@ -18,6 +18,8 @@ from dataset.LoadData import *
 from utils import *
 from models.Awe import AWEEncoder
 from models.UniLSTM import UniLSTM
+from models.BiLSTM import BiLSTM
+from models.BiLSTMMax import BiLSTMMax
 from models.Classifier import Classifier
 
 # full model class
@@ -44,14 +46,14 @@ class FullModel(pl.LightningModule):
             self.encoder = AWEEncoder()
             self.classifier = Classifier()
         elif model_name == 'UniLSTM':
-            self.encoder = UniLSTM(batch_size=batch_size)
+            self.encoder = UniLSTM()
             self.classifier = Classifier(input_dim=4*2048)
         elif model_name == 'BiLSTM':
-            self.encoder = None
-            # model hidden dimension is 4096
+            self.encoder = BiLSTM()
+            self.classifier = Classifier(input_dim=4*2*4096)
         else:
-            self.encoder = None
-            # model hidden dimension is 4096
+            self.encoder = BiLSTMMax()
+            self.classifier = Classifier(input_dim=4*2*4096)
 
         # create the loss function
         self.loss_function = nn.CrossEntropyLoss()
@@ -73,11 +75,6 @@ class FullModel(pl.LightningModule):
         lengths_premises = torch.tensor([x[x!=1].shape[0] for x in sentences.premise], device=self.device)
         lengths_hypothesis = torch.tensor([x[x!=1].shape[0] for x in sentences.hypothesis], device=self.device)
 
-        # DEBUG
-        #print('Sentence lengths:')
-        #print(lengths_premises)
-        #print(lengths_hypothesis)
-
         # pass premises and hypothesis through the embeddings
         premises = self.glove_embeddings(sentences.premise)
         hypothesis = self.glove_embeddings(sentences.hypothesis)
@@ -88,13 +85,10 @@ class FullModel(pl.LightningModule):
         # pass through the classifier
         predictions = self.classifier(sentence_representations)
 
-        # subtract 1 from the labels
-        labels = sentences.label - 1
-
         # calculate the loss and accuracy
-        loss = self.loss_function(predictions, labels)
+        loss = self.loss_function(predictions, sentences.label)
         predicted_labels = torch.argmax(predictions, dim=1)
-        accuracy = torch.true_divide(torch.sum(predicted_labels == labels), torch.tensor(labels.shape[0], device=labels.device))
+        accuracy = torch.true_divide(torch.sum(predicted_labels == sentences.label), torch.tensor(sentences.label.shape[0], device=sentences.label.device))
 
         # return the loss and accuracy
         return loss, accuracy
@@ -217,7 +211,7 @@ def train_model(args):
     os.makedirs(args.log_dir, exist_ok=True)
 
     # create the vocabulary and datasets
-    vocab, train_iter, dev_iter, test_iter = load_snli(None, args.batch_size)
+    vocab, train_iter, dev_iter, test_iter = load_snli(device=None, batch_size=args.batch_size, development=args.development)
 
     # create the callback for decreasing the learning rate
     pl_callback = PLCallback(lr_decrease_factor=args.lr_decrease_factor)
@@ -230,7 +224,7 @@ def train_model(args):
                          checkpoint_callback=ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_acc"),
                          gpus=1 if torch.cuda.is_available() else 0,
                          callbacks=[lr_monitor, pl_callback],
-                         max_epochs=10,
+                         max_epochs=3,
                          progress_bar_refresh_rate=1 if args.progress_bar else 0)
     trainer.logger._default_hp_metric = None
 
@@ -274,13 +268,15 @@ if __name__ == '__main__':
                         help='Learning rate threshold to stop at. Default is 1e-5')
 
     # other hyperparameters
-    parser.add_argument('--seed', default=42, type=int,
+    parser.add_argument('--seed', default=1234, type=int,
                         help='Seed to use for reproducing results')
     parser.add_argument('--log_dir', default='pl_logs', type=str,
                         help='Directory where the PyTorch Lightning logs should be created. Default is pl_logs')
     parser.add_argument('--progress_bar', action='store_true',
                         help=('Use a progress bar indicator for interactive experimentation. '
                               'Not to be used in conjuction with SLURM jobs'))
+    parser.add_argument('--development', action='store_true',
+                        help=('Limit the size of the datasets in development.'))
 
     args = parser.parse_args()
 
