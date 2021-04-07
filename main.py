@@ -15,7 +15,6 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 # own imports
 from dataset.LoadData import *
-from utils import *
 from models.Awe import AWEEncoder
 from models.UniLSTM import UniLSTM
 from models.BiLSTM import BiLSTM
@@ -41,6 +40,9 @@ class FullModel(pl.LightningModule):
         # create an embedding layer for the vocabulary embeddings
         self.glove_embeddings = nn.Embedding.from_pretrained(vocab.vectors)
 
+        # freeze the embeddings
+        #self.glove_embeddings.weight.requires_grad = False
+
         # check which encoder model to use
         if model_name == 'AWE':
             self.encoder = AWEEncoder()
@@ -50,10 +52,10 @@ class FullModel(pl.LightningModule):
             self.classifier = Classifier(input_dim=4*2048)
         elif model_name == 'BiLSTM':
             self.encoder = BiLSTM()
-            self.classifier = Classifier(input_dim=4*2*4096)
+            self.classifier = Classifier(input_dim=4*2*2048)
         else:
             self.encoder = BiLSTMMax()
-            self.classifier = Classifier(input_dim=4*2*4096)
+            self.classifier = Classifier(input_dim=4*2*2048)
 
         # create the loss function
         self.loss_function = nn.CrossEntropyLoss()
@@ -96,7 +98,12 @@ class FullModel(pl.LightningModule):
     # function that configures the optimizer for the model
     def configure_optimizers(self):
         # create optimizer
-        optimizer = torch.optim.SGD(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.SGD([{'params': self.encoder.parameters()},
+                {'params': self.classifier.parameters()}], lr=self.hparams.lr)
+        #optimizer = torch.optim.SGD([self.encoder.parameters(), self.classifier.parameters()], lr=self.hparams.lr)
+
+        # freeze the embeddings
+        self.glove_embeddings.weight.requires_grad = False
 
         # create learning rate decay
         lr_scheduler = {
@@ -179,7 +186,9 @@ class PLCallback(pl.Callback):
             # divide the learning rate by the specified factor
             state_dict = trainer.optimizers[0].state_dict()
             state_dict['param_groups'][0]['lr'] = state_dict['param_groups'][0]['lr'] / self.decrease_factor
-            new_optimizer = torch.optim.SGD(pl_module.parameters(), lr=state_dict['param_groups'][0]['lr'])
+            new_optimizer = torch.optim.SGD([{'params': pl_module.encoder.parameters()},
+                    {'params': pl_module.classifier.parameters()}], lr=state_dict['param_groups'][0]['lr'])
+            #new_optimizer = torch.optim.SGD([pl_module.encoder.parameters(), pl_module.classifier.parameters()], lr=state_dict['param_groups'][0]['lr'])
             new_optimizer.load_state_dict(state_dict)
 
             # update scheduler
@@ -213,31 +222,44 @@ def train_model(args):
     # create the vocabulary and datasets
     vocab, train_iter, dev_iter, test_iter = load_snli(device=None, batch_size=args.batch_size, development=args.development)
 
-    # create the callback for decreasing the learning rate
-    pl_callback = PLCallback(lr_decrease_factor=args.lr_decrease_factor)
+    # check if a checkpoint has been given
+    if args.checkpoint_dir is None:
+        # create the callback for decreasing the learning rate
+        pl_callback = PLCallback(lr_decrease_factor=args.lr_decrease_factor)
 
-    # create a learning rate monitor callback
-    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+        # create a learning rate monitor callback
+        lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
-    # create a PyTorch Lightning trainer
-    trainer = pl.Trainer(default_root_dir=args.log_dir,
+        # create a PyTorch Lightning trainer
+        trainer = pl.Trainer(default_root_dir=args.log_dir,
                          checkpoint_callback=ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_acc"),
                          gpus=1 if torch.cuda.is_available() else 0,
                          callbacks=[lr_monitor, pl_callback],
-                         max_epochs=3,
+                         max_epochs=30,
                          progress_bar_refresh_rate=1 if args.progress_bar else 0)
-    trainer.logger._default_hp_metric = None
+        trainer.logger._default_hp_metric = None
 
-    # create model
-    pl.seed_everything(args.seed)
-    model = FullModel(model_name=args.model, vocab=vocab, lr=args.lr,
-                      lr_decay=args.lr_decay, batch_size=args.batch_size)
+        # create model
+        pl.seed_everything(args.seed)
+        model = FullModel(model_name=args.model, vocab=vocab, lr=args.lr,
+                          lr_decay=args.lr_decay, batch_size=args.batch_size)
 
-    # train the model
-    trainer.fit(model, train_iter, dev_iter)
+        # train the model
+        trainer.fit(model, train_iter, dev_iter)
+
+        # load the best checkpoint
+        model = FullModel.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    else:
+        # create a PyTorch Lightning trainer
+        trainer = pl.Trainer(logger=False,
+                         checkpoint_callback=False,
+                         gpus=1 if torch.cuda.is_available() else 0,
+                         progress_bar_refresh_rate=1 if args.progress_bar else 0)
+
+        # load model from the given checkpoint
+        model = FullModel.load_from_checkpoint(args.checkpoint_dir)
 
     # test the model
-    model = FullModel.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
     model.freeze()
     test_result = trainer.test(model, test_dataloaders=test_iter, verbose=True)
 
@@ -266,6 +288,10 @@ if __name__ == '__main__':
                         help='Factor to divide learning rate by when dev accuracy decreases. Default is 5')
     parser.add_argument('--lr_threshold', default=1e-5, type=float,
                         help='Learning rate threshold to stop at. Default is 1e-5')
+
+    # loading hyperparameters
+    parser.add_argument('--checkpoint_dir', default=None, type=str,
+                        help='Directory where the model checkpoint is located. Default is None (no checkpoint used)')
 
     # other hyperparameters
     parser.add_argument('--seed', default=1234, type=int,

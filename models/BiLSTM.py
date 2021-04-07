@@ -12,7 +12,7 @@ class BiLSTM(nn.Module):
         super().__init__()
 
         # create the LSTM
-        self.lstm = nn.LSTM(input_size=300, hidden_size=4096, num_layers=1,
+        self.lstm = nn.LSTM(input_size=300, hidden_size=2048, num_layers=1,
                             batch_first=True, bidirectional=True)
 
     def forward(self, premises, lengths_premises, hypothesis, lengths_hypothesis):
@@ -23,12 +23,12 @@ class BiLSTM(nn.Module):
             hypothesis - Input batch of sentence hypothesis
             lengths_hypothesis - List of unpadded hypothesis lengths
         Outputs:
-            sentence_representations - Tensor of sentence representations of shape [B, 4*2048]
+            sentence_representations - Tensor of sentence representations of shape [B, 4*2*2048]
         """
 
         # initialize the hidden state and cell state
-        self.hidden_state = torch.zeros((2, premises.shape[0], 4096), dtype=torch.float, device=self.device)
-        self.cell_state = torch.zeros((2, premises.shape[0], 4096), dtype=torch.float, device=self.device)
+        self.hidden_state = torch.zeros((2, premises.shape[0], 2048), dtype=torch.float, device=self.device)
+        self.cell_state = torch.zeros((2, premises.shape[0], 2048), dtype=torch.float, device=self.device)
 
         # sort the embeddings on sentence length
         sorted_lengths_premises, sorted_indices_premises = torch.sort(lengths_premises, dim=0, descending=True)

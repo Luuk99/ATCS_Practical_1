@@ -1,5 +1,6 @@
+__pycache__/
 .data/
 .development_data/
 .vector_cache/
 pl_logs/
-__pycache__/
+slurm_outputs/
