@@ -40,6 +40,7 @@ python -m spacy download en
 ```bash
 python main.py --model MODEL 
 ```
+TODO: add SentEval
 
 ## Tips
 * If you want to make use of the *--development* feature to run on a smaller dataset when making changes:
@@ -51,6 +52,7 @@ python main.py --model MODEL
 		* 64x100 for test
 * Add the *--progress_bar* argument to the training to see the training progress.
 * If you want to use a checkpoint, use the *--checkpoint_dir* argument and provide the path to the checkpoint file. (add the *.ckpt* file at the end of the path)
+* Use our trained models instead of training yourself (can take very long). The models can be found in this [Drive folder](https://drive.google.com/drive/folders/1x2S5c_8n_zvXk1rXJ004_JhXAY3ldLmk?usp=sharing)
 
 ## Using Lisa Cluster
 * Use the *enviroment_Lisa.yml* file to create the correct environment.
