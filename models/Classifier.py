@@ -15,14 +15,16 @@ class Classifier(nn.Module):
         # initialize the classifier
         self.net = nn.Sequential(
             nn.Linear(input_dim, 512),
+            nn.Tanh(),
             nn.Linear(512, 512),
+            nn.Tanh(),
             nn.Linear(512, 3)
         )
 
     def forward(self, sentence_embeddings):
         """
         Inputs:
-            sentence_embeddings - Tensor of sentence representations of shape [B, 4*300]
+            sentence_embeddings - Tensor of sentence representations of shape varying shape. AWE is [B, 4*300]
         Outputs:
             predictions - Tensor of predictions (entailment, neutral, contradiction) of shape [B, 3]
         """

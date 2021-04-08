@@ -295,7 +295,7 @@ if __name__ == '__main__':
 
     # other hyperparameters
     parser.add_argument('--seed', default=1234, type=int,
-                        help='Seed to use for reproducing results')
+                        help='Seed to use for reproducing results. Default is 1234')
     parser.add_argument('--log_dir', default='pl_logs', type=str,
                         help='Directory where the PyTorch Lightning logs should be created. Default is pl_logs')
     parser.add_argument('--progress_bar', action='store_true',
