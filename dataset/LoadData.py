@@ -4,12 +4,13 @@ from torchtext import vocab
 from torchtext.data import Field, BucketIterator
 
 # function that loads the SNLI dataset
-def load_snli(device=None, batch_size=64, development=False):
+def load_snli(device=None, batch_size=64, development=False, return_label_vocab=False):
     """
     Inputs:
         device - Torchtext device to use. Default is None (use CUDA)
         batch_size - Size of the batches. Default is 64
         development - Whether to use development dataset. Default is False
+        return_label_vocab - Whether to return the label vocab. Default is False
     Outputs:
         vocab - GloVe embedding vocabulary from the alignment
         train_iter - BucketIterator of training batches
@@ -45,6 +46,9 @@ def load_snli(device=None, batch_size=64, development=False):
         device=device)
 
     # return the vocab and datasets
+    if return_label_vocab:
+        label_vocab = label_field.vocab
+        return vocab, label_vocab, train_iter, dev_iter, test_iter
     return vocab, train_iter, dev_iter, test_iter
 
 
