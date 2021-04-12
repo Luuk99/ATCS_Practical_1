@@ -30,6 +30,7 @@ jupyter notebook results.ipynb
 ```
 
 ## Replicating Results
+Training a model:
 1. Do step 1-3 of the above section.
 2. Download *en* from spacy for the tokenizer:
 ```bash
@@ -40,7 +41,28 @@ python -m spacy download en
 ```bash
 python main.py --model MODEL 
 ```
-TODO: add SentEval
+
+Running SentEval:
+1. Clone the SentEval project:
+```bash
+git clone https://github.com/facebookresearch/SentEval.git
+```
+2. Navigate to the *SentEval* folder.
+3. Install SentEval
+```bash
+python setup.py install
+```
+4. Open GitBash, navigate to the *data/downstream* folder and download data:
+```bash
+get_transfer_data.bash
+```
+5. Download Glove embeddings from the [Stanford website](http://nlp.stanford.edu/data/glove.840B.300d.zip).
+6. Move the .zip file to the *SentEval/pretrained* folder and unzip here. (make sure the .txt file is in the *pretrained* folder directly)
+7. Move the entire *SentEval* folder inside the *ATCS_Practical_1* folder.
+8. Run SentEval from the *ATCS_Practical_1* folder:
+```bash
+python senteval.py --model MODEL
+```
 
 ## Tips
 * If you want to make use of the *--development* feature to run on a smaller dataset when making changes:
@@ -52,7 +74,9 @@ TODO: add SentEval
 		* 64x100 for test
 * Add the *--progress_bar* argument to the training to see the training progress.
 * If you want to use a checkpoint, use the *--checkpoint_dir* argument and provide the path to the checkpoint file. (add the *.ckpt* file at the end of the path)
-* Use our trained models instead of training yourself (can take very long). The models can be found in this [Drive folder](https://drive.google.com/drive/folders/1x2S5c_8n_zvXk1rXJ004_JhXAY3ldLmk?usp=sharing)
+* Use our trained models instead of training yourself (can take very long).
+	1. Download the models from this [Drive folder](https://drive.google.com/drive/folders/1x2S5c_8n_zvXk1rXJ004_JhXAY3ldLmk?usp=sharing).
+	2. Move the individual model folders inside your *pl_logs/lightning_logs/* folder.
 
 ## Using Lisa Cluster
 * Use the *enviroment_Lisa.yml* file to create the correct environment.
@@ -87,4 +111,5 @@ optional arguments:
 * Luuk Kaandorp - luuk.kaandorp@student.uva.nl
 
 ## Acknowledgements
+* SentEval was cloned from the [original project GitHub](https://github.com/facebookresearch/SentEval).
 * Pytorch Lightning implementation was developed using information available in the Deep Learning Course of the UvA (https://uvadlc.github.io/).

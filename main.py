@@ -82,7 +82,15 @@ class FullModel(pl.LightningModule):
         hypothesis = self.glove_embeddings(sentences.hypothesis)
 
         # forward the premises and hypothesis through the Encoder
-        sentence_representations = self.encoder(premises, lengths_premises, hypothesis, lengths_hypothesis)
+        premises = self.encoder(premises, lengths_premises)
+        hypothesis = self.encoder(hypothesis, lengths_hypothesis)
+
+        # calculate the difference and multiplication
+        difference = torch.abs(premises - hypothesis)
+        multiplication = premises * hypothesis
+
+        # create the sentence representations
+        sentence_representations = torch.cat([premises, hypothesis, difference, multiplication], dim=1)
 
         # pass through the classifier
         predictions = self.classifier(sentence_representations)

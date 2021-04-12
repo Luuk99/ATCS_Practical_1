@@ -17,3 +17,4 @@ dependencies:
     - tqdm==4.50.2
     - pillow==8.0.1
     - spacy==2.3.0
+    - sklearn
