@@ -86,9 +86,6 @@ def batcher(params, batch):
     sentence_lengths = []
 
     for sent in batch:
-        # add the sentence length
-        sentence_lengths.append(torch.tensor(len(sent)))
-
         # add the sentence tensor
         sentence_tensor = []
         for word in sent:
@@ -96,15 +93,23 @@ def batcher(params, batch):
                 sentence_tensor.append(torch.tensor(params.word_vec[word]))
         if sentence_tensor:
             sentence_tensor = torch.stack(sentence_tensor, dim=0)
+
+            # add the sentence length
+            sentence_lengths.append(torch.tensor(len(sent)))
         else:
-            sentence_tensor = torch.zeros((1, 300))
+            sentence_tensor = torch.ones((1, 300))
+
+            # add the sentence length
+            sentence_lengths.append(torch.tensor(1))
         sentences.append(sentence_tensor)
 
     # pad into tensor
     sentences = torch.nn.utils.rnn.pad_sequence(sentences, padding_value=1.0, batch_first=True)
-    sentence_lengths = torch.stack(sentence_lengths, dim=0)
+    sentence_lengths = torch.tensor(sentence_lengths)
 
     # pass through the model
+    #print(sentences.shape)
+    #print(sentence_lengths.shape)
     embeddings = MODEL.encoder(sentences.float(), sentence_lengths)
 
     # cast back to numpy
@@ -115,9 +120,9 @@ def batcher(params, batch):
 
 
 # Set params for SentEval
-params_senteval = {'task_path': PATH_TO_DATA, 'usepytorch': True, 'kfold': 2}
+params_senteval = {'task_path': PATH_TO_DATA, 'usepytorch': True, 'kfold': 10}
 params_senteval['classifier'] = {'nhid': 0, 'optim': 'adam', 'batch_size': 64,
-                                 'tenacity': 5, 'epoch_size': 1}
+                                 'tenacity': 5, 'epoch_size': 4}
 
 # Set up logger
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.DEBUG)
