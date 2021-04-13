@@ -35,9 +35,6 @@ class UniLSTM(nn.Module):
         # pack the embeddings
         packed_sentences = nn.utils.rnn.pack_padded_sequence(sorted_sentences, sorted_lengths, batch_first=True)
 
-        # DEBUG
-        print(packed_sentences)
-
         # run through the model
         _, (hidden_states, _) = self.lstm(packed_sentences, (self.hidden_state, self.cell_state))
         hidden_states = hidden_states.squeeze(dim=0)

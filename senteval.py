@@ -82,35 +82,25 @@ def prepare(params, samples):
 
 def batcher(params, batch):
     batch = [sent if sent != [] else ['.'] for sent in batch]
-    sentences = []
-    sentence_lengths = []
+    embeddings = []
 
     for sent in batch:
-        # add the sentence tensor
-        sentence_tensor = []
+        sentvec = []
         for word in sent:
             if word in params.word_vec:
-                sentence_tensor.append(torch.tensor(params.word_vec[word]))
-        if sentence_tensor:
-            sentence_tensor = torch.stack(sentence_tensor, dim=0)
-
-            # add the sentence length
-            sentence_lengths.append(torch.tensor(len(sent)))
-        else:
-            sentence_tensor = torch.ones((1, 300))
-
-            # add the sentence length
-            sentence_lengths.append(torch.tensor(1))
-        sentences.append(sentence_tensor)
+                sentvec.append(torch.tensor(params.word_vec[word]))
+        if not sentvec:
+            vec = torch.zeros((1, 300))
+            sentvec.append(vec)
+        sentvec = torch.stack(sentvec, dim=0)
+        embeddings.append(sentvec)
 
     # pad into tensor
-    sentences = torch.nn.utils.rnn.pad_sequence(sentences, padding_value=1.0, batch_first=True)
-    sentence_lengths = torch.tensor(sentence_lengths)
+    sentence_lengths = torch.tensor([x.shape[0] for x in embeddings])
+    embeddings = torch.nn.utils.rnn.pad_sequence(embeddings, padding_value=0.0, batch_first=True)
 
     # pass through the model
-    #print(sentences.shape)
-    #print(sentence_lengths.shape)
-    embeddings = MODEL.encoder(sentences.float(), sentence_lengths)
+    embeddings = MODEL.encoder(embeddings.float(), sentence_lengths)
 
     # cast back to numpy
     embeddings = embeddings.cpu().detach().numpy()

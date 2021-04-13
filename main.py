@@ -40,9 +40,6 @@ class FullModel(pl.LightningModule):
         # create an embedding layer for the vocabulary embeddings
         self.glove_embeddings = nn.Embedding.from_pretrained(vocab.vectors)
 
-        # freeze the embeddings
-        #self.glove_embeddings.weight.requires_grad = False
-
         # check which encoder model to use
         if model_name == 'AWE':
             self.encoder = AWEEncoder()
@@ -108,7 +105,6 @@ class FullModel(pl.LightningModule):
         # create optimizer
         optimizer = torch.optim.SGD([{'params': self.encoder.parameters()},
                 {'params': self.classifier.parameters()}], lr=self.hparams.lr)
-        #optimizer = torch.optim.SGD([self.encoder.parameters(), self.classifier.parameters()], lr=self.hparams.lr)
 
         # freeze the embeddings
         self.glove_embeddings.weight.requires_grad = False
@@ -196,7 +192,6 @@ class PLCallback(pl.Callback):
             state_dict['param_groups'][0]['lr'] = state_dict['param_groups'][0]['lr'] / self.decrease_factor
             new_optimizer = torch.optim.SGD([{'params': pl_module.encoder.parameters()},
                     {'params': pl_module.classifier.parameters()}], lr=state_dict['param_groups'][0]['lr'])
-            #new_optimizer = torch.optim.SGD([pl_module.encoder.parameters(), pl_module.classifier.parameters()], lr=state_dict['param_groups'][0]['lr'])
             new_optimizer.load_state_dict(state_dict)
 
             # update scheduler
