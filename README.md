@@ -14,7 +14,7 @@ In this project, we test multiple models proposed by [Conneau et al.](https://ar
 ## Getting Started
 1. Open Anaconda prompt and clone this repository (or download and unpack zip):
 ```bash
-git clone https://github.com/Luuk99/ATCS_Practical_1
+git clone https://github.com/Luuk99/ATCS_Practical_1.git
 ```
 2. Create the environment:
 ```bash
