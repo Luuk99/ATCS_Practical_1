@@ -1,0 +1,7 @@
+__pycache__/
+.data/
+.development_data/
+.vector_cache/
+pl_logs/
+slurm_outputs/
+SentEval/
