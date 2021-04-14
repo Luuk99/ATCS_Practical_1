@@ -77,6 +77,7 @@ python senteval.py --model MODEL
 * Use our trained models instead of training yourself (can take very long).
 	1. Download the models from this [Drive folder](https://drive.google.com/drive/folders/1x2S5c_8n_zvXk1rXJ004_JhXAY3ldLmk?usp=sharing).
 	2. Move the individual model folders inside your *pl_logs/lightning_logs/* folder.
+* Use our SentEval results instead of running yourself (takes about 3 hours per model). The results can be found in the *senteval_outputs* folder.
 
 ## Using Lisa Cluster
 * Use the *enviroment_Lisa.yml* file to create the correct environment.
